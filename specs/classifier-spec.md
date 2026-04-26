@@ -34,8 +34,18 @@ all labeled training examples, and the new episode description to classify.
 **Task instruction (what should the LLM know about the task?):**
 
 ```
-[blank — describe the classification task and the four valid labels.
- What does each label mean? What should the LLM return?]
+You are classifying podcast episodes by their format. Classify the episode
+into exactly one of these four labels:
+
+- interview: a conversation between a host and one or more guests
+- solo: a single host speaking from memory, experience, or opinion — no guests,
+  no assembled external sources
+- panel: multiple guests with roughly equal speaking time, often debating or
+  discussing a topic together
+- narrative: a story assembled from external sources — interviews, archival
+  audio, reporting — with a clear narrative arc
+
+Return only the label and your reasoning. Do not explain the taxonomy.
 ```
 
 ---
@@ -43,9 +53,11 @@ all labeled training examples, and the new episode description to classify.
 **How should labeled examples be formatted in the prompt?**
 
 ```
-[blank — sketch out how each example will appear. What information from
- each labeled_example dict should you include? Title? Description? Label?
- What delimiter or structure separates examples?]
+Each example should include the episode title, a brief excerpt or the full
+description, and the correct label. Separate examples with a blank line or
+a delimiter like "---". Include all fields that help the model see why the
+label was applied — title and description are both useful; other fields
+(like episode ID) are not needed.
 ```
 
 ---
@@ -53,8 +65,9 @@ all labeled training examples, and the new episode description to classify.
 **Example block sketch (write one concrete example):**
 
 ```
-[blank — write out what a single training example looks like in the prompt.
- Use placeholders like {title}, {description}, {label}.]
+Title: {title}
+Description: {description}
+Label: {label}
 ```
 
 ---
@@ -62,8 +75,15 @@ all labeled training examples, and the new episode description to classify.
 **How should the new episode (to be classified) be presented?**
 
 ```
-[blank — how do you signal to the LLM that this is the episode to classify,
- not another example? What instruction follows the description?]
+Present it in the same format as the labeled examples, but omit the Label
+line and replace it with an instruction to classify. For example:
+
+Title: {title}
+Description: {description}
+Label: ?
+
+Then add a line like: "Classify the episode above. Return your answer in
+the format below:" followed by the output format you chose.
 ```
 
 ---
@@ -72,9 +92,9 @@ all labeled training examples, and the new episode description to classify.
 
 ```
 [blank — you need to parse the response in classify_episode(). What format
- makes parsing reliable? Think about: a single label on its own line?
- A structured format like "Label: X / Reasoning: Y"? JSON?
- What are the tradeoffs?]
+makes parsing reliable? Think about: a single label on its own line?
+A structured format like "Label: X / Reasoning: Y"? JSON?
+What are the tradeoffs?]
 ```
 
 ---
@@ -83,7 +103,7 @@ all labeled training examples, and the new episode description to classify.
 
 ```
 [blank — what if labeled_examples is empty? What if the description is very
- short? How does your prompt handle these?]
+short? How does your prompt handle these?]
 ```
 
 ---
@@ -114,7 +134,9 @@ Returns a dict with a label and reasoning.
 **Step 1 — Build the prompt:**
 
 ```
-[blank — which function do you call? What arguments do you pass?]
+Call build_few_shot_prompt(labeled_examples, description) and store the
+returned string in a variable (e.g., prompt). Pass through both arguments
+exactly as received — no modification needed before calling.
 ```
 
 ---
@@ -122,8 +144,13 @@ Returns a dict with a label and reasoning.
 **Step 2 — Send to the LLM:**
 
 ```
-[blank — what method do you call on _client? What parameters does it need?
- (Hint: see specs/system-design.md — "How the Groq Chat Completions API Works")]
+Call _client.chat.completions.create() with:
+  - model: the model name from config (MODEL_NAME)
+  - messages: a list with one dict — {"role": "user", "content": prompt}
+  - max_tokens: a reasonable limit (e.g., 200–300) to keep responses concise
+
+Extract the response text from:
+  response.choices[0].message.content
 ```
 
 ---
@@ -132,8 +159,8 @@ Returns a dict with a label and reasoning.
 
 ```
 [blank — how do you extract the label and reasoning from the LLM's text output?
- What string operations or parsing logic do you need?
- This depends on the output format you chose in build_few_shot_prompt.]
+What string operations or parsing logic do you need?
+This depends on the output format you chose in build_few_shot_prompt.]
 ```
 
 ---
@@ -142,7 +169,7 @@ Returns a dict with a label and reasoning.
 
 ```
 [blank — what do you do if the LLM returns a label that isn't in VALID_LABELS?
- What should label be set to?]
+What should label be set to?]
 ```
 
 ---
@@ -151,8 +178,8 @@ Returns a dict with a label and reasoning.
 
 ```
 [blank — what could go wrong? (Network error? Unparseable response?)
- What should the function return if something fails?
- Hint: the evaluation loop runs 20 calls — one bad response shouldn't crash everything.]
+What should the function return if something fails?
+Hint: the evaluation loop runs 20 calls — one bad response shouldn't crash everything.]
 ```
 
 ---
@@ -175,3 +202,34 @@ inconsistent or ambiguous labels, the LLM will learn the wrong pattern.
 
 Before implementing the classifier, re-read `data/taxonomy.md` and double-check
 any labels you're unsure about. Annotation quality is part of the lab.
+
+---
+
+## Implementation Notes
+
+*Fill this in after implementing and testing both functions.*
+
+**Test: what does the raw LLM response look like for one episode?**
+
+```
+Episode tested: [title]
+Raw response text: [paste it here]
+```
+
+**How did you parse the label out of the response?**
+
+```
+[describe the string operations — strip, split, lower, etc.]
+```
+
+**Did any episodes return `"unknown"`? If so, why?**
+
+```
+[yes / no — if yes, what did the raw response look like?]
+```
+
+**One thing about the output format that surprised you:**
+
+```
+[your answer here]
+```
