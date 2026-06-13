@@ -91,10 +91,29 @@ the format below:" followed by the output format you chose.
 **What output format should you request from the LLM?**
 
 ```
-[blank — you need to parse the response in classify_episode(). What format
-makes parsing reliable? Think about: a single label on its own line?
-A structured format like "Label: X / Reasoning: Y"? JSON?
-What are the tradeoffs?]
+Ask for exactly two lines in this format:
+
+Label: <one valid label>
+Reasoning: <one brief explanation>
+
+Choice: use the tagged two-line format above.
+
+Tradeoffs:
+- "Label: X / Reasoning: Y" is easier to parse than free-form prose because
+  each field has a fixed prefix. It is also less brittle than JSON because we
+  can parse it with simple string operations even if the model adds minor
+  whitespace variation.
+- JSON is more structured in theory, but LLMs often wrap JSON in code fences,
+  add trailing text, or produce invalid escaping/quotes, which makes parsing
+  less reliable unless we add extra cleanup logic.
+- "Label on its own line, then explanation" is readable, but harder to parse
+  robustly because the first line may contain extra words like "Label" or a
+  sentence instead of the raw class name.
+
+Prompt wording should explicitly say:
+- Return exactly two lines.
+- Use one of these labels exactly as written: interview, solo, panel, narrative.
+- Do not use JSON, bullet points, or code fences.
 ```
 
 ---
@@ -102,8 +121,20 @@ What are the tradeoffs?]
 **Edge cases to handle in the prompt:**
 
 ```
-[blank — what if labeled_examples is empty? What if the description is very
-short? How does your prompt handle these?]
+If labeled_examples is empty, still provide the task instructions and label
+definitions, then classify zero-shot using the same required output format.
+
+If the description is very short or ambiguous, instruct the model to choose the
+single best label from the four options using only the provided text and to
+briefly note the uncertainty in the Reasoning line.
+
+If the description is empty or whitespace, the prompt can still ask for the
+best label, but the implementation should ideally avoid sending such inputs or
+expect a low-confidence answer. The prompt should not invite the model to use
+outside knowledge.
+
+In all cases, remind the model to return exactly one label and not to explain
+the taxonomy beyond the brief reasoning line.
 ```
 
 ---
@@ -158,9 +189,19 @@ Extract the response text from:
 **Step 3 — Parse the response:**
 
 ```
-[blank — how do you extract the label and reasoning from the LLM's text output?
-What string operations or parsing logic do you need?
-This depends on the output format you chose in build_few_shot_prompt.]
+Strip leading/trailing whitespace from the response text, then split into
+lines.
+
+Look for a line that starts with "Label:" and a line that starts with
+"Reasoning:". Extract the text after the first colon in each line and strip
+whitespace again.
+
+Lowercase the label before validation so values like "Interview" become
+"interview".
+
+If the model returns extra lines, ignore them unless they are needed to recover
+the Reasoning field. If either required field is missing, treat the response as
+unparseable.
 ```
 
 ---
@@ -168,8 +209,12 @@ This depends on the output format you chose in build_few_shot_prompt.]
 **Step 4 — Validate the label:**
 
 ```
-[blank — what do you do if the LLM returns a label that isn't in VALID_LABELS?
-What should label be set to?]
+If the parsed label is not one of VALID_LABELS after lowercasing and stripping,
+set label to "unknown".
+
+Keep the reasoning if it was parseable, since it may still be useful for
+debugging. If reasoning was also missing, return a short fallback message like
+"Unparseable or invalid model response."
 ```
 
 ---
@@ -177,9 +222,24 @@ What should label be set to?]
 **Step 5 — Handle errors gracefully:**
 
 ```
-[blank — what could go wrong? (Network error? Unparseable response?)
-What should the function return if something fails?
-Hint: the evaluation loop runs 20 calls — one bad response shouldn't crash everything.]
+Wrap the LLM call and parsing logic in try/except.
+
+Possible failures:
+- API/network error
+- missing response content
+- response text that does not contain the required Label/Reasoning lines
+- an invalid label outside VALID_LABELS
+
+On any exception, return:
+
+{
+  "label": "unknown",
+  "reasoning": "LLM classification failed: <brief error summary>"
+}
+
+If exposing the raw exception feels too noisy, use a shorter stable message such
+as "LLM classification failed due to an API or parsing error." The key point is
+that one failed call should not crash the evaluation loop.
 ```
 
 ---
@@ -212,24 +272,36 @@ any labels you're unsure about. Annotation quality is part of the lab.
 **Test: what does the raw LLM response look like for one episode?**
 
 ```
-Episode tested: [title]
-Raw response text: [paste it here]
+Episode tested: Marine Biologist Dr. Amara Diallo on What Coral Bleaching Actually Looks Like
+Raw response text:
+Label: interview
+Reasoning: The episode features a conversation between a host and Dr. Amara Diallo, with the host asking questions and Dr. Diallo sharing her experiences and expertise, which is characteristic of an interview format.
 ```
 
 **How did you parse the label out of the response?**
 
 ```
-[describe the string operations — strip, split, lower, etc.]
+I stripped the full response text, split it into non-empty lines, then scanned
+for the line that starts with "Label:" (case-insensitive via lowercasing each
+line first).
+
+When found, I used split(":", 1) to get everything after the first colon,
+then strip() and lower() to normalize it (e.g., "Interview" -> "interview").
+
+I validated the normalized value against VALID_LABELS. If it does not match
+exactly, I set label to "unknown".
 ```
 
 **Did any episodes return `"unknown"`? If so, why?**
 
 ```
-[yes / no — if yes, what did the raw response look like?]
+No for this test run. The model returned a valid label ("interview") in the
+expected tagged format.
 ```
 
 **One thing about the output format that surprised you:**
 
 ```
-[your answer here]
+The model followed the exact two-line format on the first try, which made the
+parser straightforward and avoided extra cleanup logic.
 ```

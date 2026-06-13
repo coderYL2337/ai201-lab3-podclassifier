@@ -93,8 +93,11 @@ def classify_description(description: str) -> str:
     return _result_html(result["label"], result["reasoning"])
 
 
-def fill_example(title: str, description: str) -> tuple[str, str]:
-    return title, description
+def fill_example(title: str, description: str):
+    return (
+        gr.update(value=title, interactive=True),
+        gr.update(value=description, interactive=True),
+    )
 
 
 def run_eval() -> str:
@@ -157,6 +160,7 @@ Before the classifier works, you need to complete the milestones:
                         label="Episode title (optional — for your reference)",
                         placeholder="e.g. Chef Marcus Lin on What Restaurant Culture Gets Wrong About Burnout",
                         lines=1,
+                        interactive=True,
                     )
                     description_box = gr.Textbox(
                         label="Episode description",

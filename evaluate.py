@@ -26,6 +26,9 @@ def run_evaluation() -> dict:
     for episode in test_episodes:
         print(f"  Classifying: {episode['title'][:60]}...")
         prediction = classify_episode(episode["description"], labeled_examples)
+        if prediction["label"] == "unknown":
+            print(f"  [WARN] unknown -> {episode['title'][:60]}")
+            print(f"         reason: {prediction['reasoning']}")
         results.append({
             "id": episode["id"],
             "title": episode["title"],
@@ -58,8 +61,18 @@ def compute_accuracy(predictions: list[str], ground_truth: list[str]) -> float:
 
     Before writing code, complete specs/evaluation-spec.md.
     """
-    return 0.0
+    
+    if not ground_truth:
+        return 0.0
 
+    correct_count = 0
+    for predicted, truth in zip(predictions, ground_truth):
+        p = "" if predicted is None else str(predicted).strip().lower()
+        t = "" if truth is None else str(truth).strip().lower()
+        if p == t:
+            correct_count += 1
+
+    return correct_count / len(ground_truth)
 
 def compute_per_class_accuracy(
     predictions: list[str], ground_truth: list[str]
@@ -83,7 +96,30 @@ def compute_per_class_accuracy(
 
     Before writing code, complete specs/evaluation-spec.md.
     """
-    return {label: {"correct": 0, "total": 0, "accuracy": 0.0} for label in VALID_LABELS}
+    per_class = {
+        label: {"correct": 0, "total": 0, "accuracy": 0.0}
+        for label in VALID_LABELS
+    }
+
+    for predicted, truth in zip(predictions, ground_truth):
+        t = "" if truth is None else str(truth).strip().lower()
+        p = "" if predicted is None else str(predicted).strip().lower()
+
+        # Group by ground-truth label
+        if t not in per_class:
+            continue
+
+        per_class[t]["total"] += 1
+        if p == t:
+            per_class[t]["correct"] += 1
+
+    for label in VALID_LABELS:
+        total = per_class[label]["total"]
+        per_class[label]["accuracy"] = (
+            per_class[label]["correct"] / total if total else 0.0
+        )
+
+    return per_class
 
 
 def format_evaluation_report(eval_results: dict) -> str:

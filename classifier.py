@@ -55,7 +55,54 @@ def build_few_shot_prompt(labeled_examples: list[dict], description: str) -> str
 
     Before writing code, complete specs/classifier-spec.md.
     """
-    return ""
+    sections = [
+        "You are classifying podcast episodes by their format.",
+        "Classify the episode into exactly one of these four labels:",
+        "",
+        "- interview: a conversation between a host and one or more guests",
+        "- solo: a single host speaking from memory, experience, or opinion — no guests, no assembled external sources",
+        "- panel: multiple guests with roughly equal speaking time, often debating or discussing a topic together",
+        "- narrative: a story assembled from external sources — interviews, archival audio, reporting — with a clear narrative arc",
+        "",
+        "Use only the information in the descriptions below.",
+        "If the episode is ambiguous, choose the single best label and mention the uncertainty briefly in the reasoning.",
+        "Return exactly two lines and nothing else:",
+        "Label: <one valid label>",
+        "Reasoning: <one brief explanation>",
+        "Do not use JSON, bullet points, or code fences.",
+    ]
+
+    if labeled_examples:
+        sections.extend(["", "Labeled examples:"])
+        for example in labeled_examples:
+            title = str(example.get("title", "")).strip() or "Untitled"
+            example_description = str(example.get("description", "")).strip() or "No description provided."
+            label = str(example.get("label", "")).strip()
+            sections.extend([
+                "---",
+                f"Title: {title}",
+                f"Description: {example_description}",
+                f"Label: {label}",
+            ])
+    else:
+        sections.extend([
+            "",
+            "There are no labeled examples available, so classify the episode zero-shot using the definitions above.",
+        ])
+
+    target_description = str(description).strip() or "No description provided."
+    sections.extend([
+        "",
+        "Episode to classify:",
+        f"Description: {target_description}",
+        "Label: ?",
+        "",
+        "Classify the episode above. Return your answer in this exact format:",
+        "Label: <one valid label>",
+        "Reasoning: <one brief explanation>",
+    ])
+
+    return "\n".join(sections)
 
 
 def classify_episode(description: str, labeled_examples: list[dict]) -> dict:
@@ -76,7 +123,57 @@ def classify_episode(description: str, labeled_examples: list[dict]) -> dict:
 
     Before writing code, complete specs/classifier-spec.md.
     """
-    return {
-        "label": None,
-        "reasoning": "Classifier not yet implemented. Complete Milestone 2.",
-    }
+    try:
+        prompt = build_few_shot_prompt(labeled_examples, description)
+        response = _client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=250,
+        )
+
+        response_text = (response.choices[0].message.content or "").strip()
+        #temporary debugging output to see raw LLM response
+        print(response_text)
+        lines = [line.strip() for line in response_text.splitlines() if line.strip()]
+
+        label = None
+        reasoning = None
+
+        for index, line in enumerate(lines):
+            lower_line = line.lower()
+
+            if lower_line.startswith("label:"):
+                label = line.split(":", 1)[1].strip().lower()
+            elif lower_line.startswith("reasoning:"):
+                reasoning_text = line.split(":", 1)[1].strip()
+                continuation_lines = []
+                for extra_line in lines[index + 1:]:
+                    if ":" in extra_line and extra_line.split(":", 1)[0].strip().lower() in {"label", "reasoning"}:
+                        break
+                    continuation_lines.append(extra_line)
+
+                reasoning_parts = [part for part in [reasoning_text, *continuation_lines] if part]
+                reasoning = " ".join(reasoning_parts).strip() if reasoning_parts else ""
+
+        if label is None or reasoning is None:
+            return {
+                "label": "unknown",
+                "reasoning": "Unparseable or invalid model response.",
+            }
+
+        if label not in VALID_LABELS:
+            return {
+                "label": "unknown",
+                "reasoning": reasoning or "Unparseable or invalid model response.",
+            }
+
+        return {
+            "label": label,
+            "reasoning": reasoning or "No reasoning provided.",
+        }
+    except Exception as exc:
+        print(f"[LLM ERROR] {exc}")
+        return {
+            "label": "unknown",
+            "reasoning": f"LLM classification failed: {str(exc).strip() or 'unknown error'}",
+        }
